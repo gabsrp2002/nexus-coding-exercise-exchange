@@ -1,12 +1,17 @@
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use serde_json::json;
 use services::feed;
 use std::str::FromStr;
 
 /// Defines the command-line arguments for the application.
 /// This structure uses `clap` to parse and validate arguments.
+/// The primary commands are mutually exclusive; providing more than one
+/// results in a clear error instead of a silent skip.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
+#[command(group(
+    ArgGroup::new("command").args(["start_feed", "submit", "cancel", "orders"]),
+))]
 struct Args {
     /// Flag to start the order feed simulation.
     #[arg(long)]

@@ -25,7 +25,7 @@ Code quality matters, but the primary signal is how you reason, execute, and col
 Before your interview, please complete the following setup steps:
 
 1. Install an AI-assisted coding tool (e.g. Cursor, Claude Code, Codex, or Copilot).  
-2. [Install Rust](https://rust-lang.org/tools/install/). You may complete the interview in **any language** but Rust is needed for the starter code.
+2. [Install Rust](https://rust-lang.org/tools/install/) (version 1.85 or newer). You may complete the interview in **any language** but Rust is needed for the starter code.
 3. Review the README included in the starter package and familiarize yourself with the project layout.  
 4. Ensure basic familiarity with basic market concepts (limit orders, bids and asks, trades).
 
