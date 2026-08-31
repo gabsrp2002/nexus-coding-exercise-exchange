@@ -206,7 +206,11 @@ fn generate_message(state: &mut FeedState) -> OrderMessage {
     // frequently cross each other.
     let price = round2(*mid * (1.0 + rng.gen_range(-0.005..0.005)));
     let quantity = round1(rng.gen_range(1.0..10.0));
-    let side = if rng.gen_bool(0.5) { Side::Buy } else { Side::Sell };
+    let side = if rng.gen_bool(0.5) {
+        Side::Buy
+    } else {
+        Side::Sell
+    };
     let account = rng.gen_range(0..state.num_accounts);
 
     // Remember this order as a potential cancel target.
