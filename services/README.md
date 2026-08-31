@@ -216,3 +216,56 @@ curl -X POST http://127.0.0.1:3000/cancel \
 - Orders are random limit orders priced around a per-symbol mid price that drifts slowly as a random walk, so bids and asks frequently cross.
 - Roughly 15% of generated messages are cancels of recent orders. A cancel may arrive for an order that (in your view of the market) has already traded — handling this is up to you.
 - The feed is a raw stream: it does not track balances or positions, and it never reports whether orders matched. There are no trade/execution messages.
+
+---
+
+# Matching Engine Service
+
+The matching engine service consumes the order feed, maintains in-memory limit order books with price-time priority for all symbols, matches crossing buy and sell orders, executes trades, and handles cancellations.
+
+## Starting the Matching Engine
+
+Start the matching engine (connecting to the feed on port 3000):
+
+```bash
+cargo run -- --start-matcher
+```
+
+Or start both the feed and matching engine together in a single process:
+
+```bash
+cargo run -- --start-all
+```
+
+Custom options:
+- `--feed-url <URL>`: URL of the feed service (default `http://127.0.0.1:3000`).
+- `--matcher-port <PORT>`: HTTP API port for matching engine queries (default `3001`).
+- `--poll-interval-ms <MS>`: Polling interval in ms (default `100`).
+
+## Interacting with the Matching Engine
+
+### CLI Commands
+
+- View order book (all symbols or specific symbol):
+  ```bash
+  cargo run -- --book
+  cargo run -- --book ETH-USDC
+  ```
+
+- View executed trades:
+  ```bash
+  cargo run -- --trades
+  cargo run -- --trades ETH-USDC
+  ```
+
+- View matching statistics:
+  ```bash
+  cargo run -- --matcher-stats
+  ```
+
+### HTTP API (`http://127.0.0.1:3001`)
+
+- `GET /trades?symbol=ETH-USDC&limit=20`: List executed trades.
+- `GET /book?symbol=ETH-USDC`: View order book depth, spread, and open orders.
+- `GET /stats`: View engine performance statistics (messages processed, trades executed, total volume).
+- `GET /health`: Health check endpoint.
