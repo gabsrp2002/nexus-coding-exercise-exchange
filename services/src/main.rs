@@ -20,6 +20,8 @@ use std::str::FromStr;
         "orders",
         "book",
         "trades",
+        "account",
+        "accounts",
         "matcher_stats",
     ]),
 ))]
@@ -56,6 +58,10 @@ struct Args {
     #[arg(long, default_value_t = 100)]
     poll_interval_ms: u64,
 
+    /// The SQLite database file path (use :memory: for in-memory).
+    #[arg(long, default_value = "market_data.db")]
+    db_path: String,
+
     /// The arguments for submitting a new order.
     /// Expects account ID, symbol, side, price, and quantity.
     #[arg(long, num_args = 5, value_names = ["ACCOUNT_ID", "SYMBOL", "SIDE", "PRICE", "QUANTITY"])]
@@ -80,6 +86,14 @@ struct Args {
     /// Optionally specify a symbol (e.g. --trades ETH-USDC).
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
     trades: Option<String>,
+
+    /// Fetches and prints portfolio positions, cash, and fill count for a specific account.
+    #[arg(long)]
+    account: Option<u32>,
+
+    /// Fetches and prints portfolios (cash and positions) for all active accounts.
+    #[arg(long)]
+    accounts: bool,
 
     /// Fetches and prints statistics from the matching engine.
     #[arg(long)]
@@ -225,6 +239,36 @@ async fn main() -> std::io::Result<()> {
         } else {
             println!("Failed to fetch trades. Status: {}", res.status());
         }
+    } else if let Some(account_id) = args.account {
+        // Fetch portfolio for a specific account
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{}/account?id={}", args.matcher_port, account_id);
+        let res = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Failed to connect to matching engine. Is --start-matcher running?");
+        if res.status().is_success() {
+            let account_json: serde_json::Value = res.json().await.unwrap();
+            println!("{}", serde_json::to_string_pretty(&account_json).unwrap());
+        } else {
+            println!("Failed to fetch account portfolio. Status: {}", res.status());
+        }
+    } else if args.accounts {
+        // Fetch portfolios for all accounts
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("http://127.0.0.1:{}/accounts", args.matcher_port);
+        let res = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Failed to connect to matching engine. Is --start-matcher running?");
+        if res.status().is_success() {
+            let accounts_json: serde_json::Value = res.json().await.unwrap();
+            println!("{}", serde_json::to_string_pretty(&accounts_json).unwrap());
+        } else {
+            println!("Failed to fetch accounts. Status: {}", res.status());
+        }
     } else if args.matcher_stats {
         // Fetch matching engine stats
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
@@ -245,7 +289,7 @@ async fn main() -> std::io::Result<()> {
         feed::start_feed(args.num_accounts, args.rate).await;
     } else if args.start_matcher {
         // Start the matching engine & consumer
-        engine::start_engine(args.feed_url, args.matcher_port, args.poll_interval_ms).await;
+        engine::start_engine(args.feed_url, args.matcher_port, args.poll_interval_ms, &args.db_path).await;
     } else if args.start_all {
         // Start both the order feed and the matching engine
         let num_accounts = args.num_accounts;
@@ -254,10 +298,10 @@ async fn main() -> std::io::Result<()> {
             feed::start_feed(num_accounts, rate).await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        engine::start_engine(args.feed_url, args.matcher_port, args.poll_interval_ms).await;
+        engine::start_engine(args.feed_url, args.matcher_port, args.poll_interval_ms, &args.db_path).await;
     } else {
         println!(
-            "Please specify a command:\n  --start-feed: Start feed generator\n  --start-matcher: Start matching engine service\n  --start-all: Start feed & matching engine together\n  --submit, --cancel, --orders\n  --book [SYMBOL], --trades [SYMBOL], --matcher-stats"
+            "Please specify a command:\n  --start-feed: Start feed generator\n  --start-matcher: Start matching engine service\n  --start-all: Start feed & matching engine together\n  --submit, --cancel, --orders\n  --book [SYMBOL], --trades [SYMBOL], --account <ID>, --accounts, --matcher-stats"
         );
     }
     Ok(())

@@ -87,3 +87,20 @@ pub struct EngineStats {
     pub total_value_traded: f64,
     pub open_orders_count: usize,
 }
+
+/// Represents an account's position in a specific asset/symbol.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PositionView {
+    pub symbol: String,
+    pub position: f64,
+}
+
+/// Represents the overall portfolio view for an account, including cash balance,
+/// asset positions, and total fill/trade counts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AccountPortfolio {
+    pub account_id: AccountId,
+    pub cash: f64,
+    pub positions: Vec<PositionView>,
+    pub trades_count: usize,
+}
