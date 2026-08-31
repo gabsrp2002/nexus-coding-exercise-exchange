@@ -1,17 +1,19 @@
 use crate::engine::book::OrderBook;
-use crate::engine::types::{BookOrder, EngineStats, OrderBookView, Trade};
-use crate::feed::{OrderMessage, SYMBOLS};
+use crate::engine::db::Database;
+use crate::engine::types::{AccountPortfolio, BookOrder, EngineStats, OrderBookView, Trade};
+use crate::feed::{AccountId, OrderMessage, SYMBOLS};
 use std::collections::HashMap;
 use tracing::info;
 
 /// The central matching engine that maintains order books across symbols,
-/// matches orders, executes trades, and manages trade history and statistics.
-#[derive(Debug)]
+/// matches orders, executes trades, and manages trade history, statistics,
+/// and SQLite persistence for market data and account portfolios.
 pub struct MatchingEngine {
     books: HashMap<String, OrderBook>,
     trades: Vec<Trade>,
     stats: EngineStats,
     next_trade_id: u64,
+    pub db: Database,
 }
 
 impl Default for MatchingEngine {
@@ -22,16 +24,28 @@ impl Default for MatchingEngine {
 
 impl MatchingEngine {
     pub fn new() -> Self {
+        Self::with_db_path(":memory:").expect("Failed to create in-memory database")
+    }
+
+    pub fn with_db_path(db_path: &str) -> rusqlite::Result<Self> {
         let mut books = HashMap::new();
         for (symbol, _) in SYMBOLS {
             books.insert(symbol.to_string(), OrderBook::new(symbol.to_string()));
         }
-        Self {
+        let mut db = Database::new(db_path)?;
+
+        // Populate initial empty book snapshots in DB
+        for book in books.values() {
+            let _ = db.save_book_snapshot(&book.to_view());
+        }
+
+        Ok(Self {
             books,
             trades: Vec::new(),
             stats: EngineStats::default(),
             next_trade_id: 0,
-        }
+            db,
+        })
     }
 
     /// Process a feed message (New order or Cancel).
@@ -68,6 +82,12 @@ impl MatchingEngine {
 
                 let executed_trades = book.match_and_insert(order, &mut self.next_trade_id);
 
+                if !executed_trades.is_empty() {
+                    let _ = self.db.record_trades(&executed_trades);
+                }
+
+                let _ = self.db.save_book_snapshot(&book.to_view());
+
                 for trade in &executed_trades {
                     self.stats.trades_executed += 1;
                     self.stats.total_volume_traded += trade.quantity;
@@ -103,6 +123,7 @@ impl MatchingEngine {
 
                 for book in self.books.values_mut() {
                     if let Some(order) = book.cancel_order(target_id) {
+                        let _ = self.db.save_book_snapshot(&book.to_view());
                         cancelled = Some(order);
                         break;
                     }
@@ -142,21 +163,42 @@ impl MatchingEngine {
             .collect()
     }
 
-    /// Retrieve trade history with optional symbol filter and limit.
-    pub fn get_trades(&self, symbol: Option<&str>, limit: Option<usize>) -> Vec<Trade> {
-        let matching_trades = self.trades.iter().rev().filter(|t| {
-            if let Some(sym) = symbol {
-                t.symbol.eq_ignore_ascii_case(sym)
-            } else {
-                true
-            }
-        });
+    /// Retrieve trade history with optional symbol and account filter and limit.
+    pub fn get_trades(
+        &self,
+        symbol: Option<&str>,
+        account: Option<AccountId>,
+        limit: Option<usize>,
+    ) -> Vec<Trade> {
+        self.db
+            .get_trades(symbol, account, limit)
+            .unwrap_or_else(|_| {
+                let matching_trades = self.trades.iter().rev().filter(|t| {
+                    let sym_match = symbol
+                        .map(|s| t.symbol.eq_ignore_ascii_case(s))
+                        .unwrap_or(true);
+                    let acc_match = account
+                        .map(|a| t.buy_account == a || t.sell_account == a)
+                        .unwrap_or(true);
+                    sym_match && acc_match
+                });
 
-        if let Some(n) = limit {
-            matching_trades.take(n).cloned().collect()
-        } else {
-            matching_trades.cloned().collect()
-        }
+                if let Some(n) = limit {
+                    matching_trades.take(n).cloned().collect()
+                } else {
+                    matching_trades.cloned().collect()
+                }
+            })
+    }
+
+    /// Retrieve portfolio for a specific account (cash balance, positions, trade count).
+    pub fn get_account_portfolio(&self, account_id: AccountId) -> rusqlite::Result<AccountPortfolio> {
+        self.db.get_account_portfolio(account_id)
+    }
+
+    /// Retrieve all account portfolios.
+    pub fn get_all_accounts(&self) -> rusqlite::Result<Vec<AccountPortfolio>> {
+        self.db.get_all_accounts()
     }
 
     /// Retrieve overall engine metrics.

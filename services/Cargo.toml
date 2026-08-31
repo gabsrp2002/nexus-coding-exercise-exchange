@@ -13,3 +13,4 @@ axum = "0.8.4"
 rand = "0.8"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+rusqlite = { version = "0.33", features = ["bundled"] }

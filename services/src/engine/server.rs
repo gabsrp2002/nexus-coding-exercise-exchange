@@ -1,4 +1,5 @@
 use crate::engine::matcher::MatchingEngine;
+use crate::feed::AccountId;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -14,6 +15,7 @@ use tracing::info;
 #[derive(Deserialize)]
 struct GetTradesQuery {
     symbol: Option<String>,
+    account: Option<AccountId>,
     limit: Option<usize>,
 }
 
@@ -22,12 +24,17 @@ struct GetBookQuery {
     symbol: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct GetAccountQuery {
+    id: AccountId,
+}
+
 async fn get_trades(
     State(engine): State<Arc<Mutex<MatchingEngine>>>,
     Query(params): Query<GetTradesQuery>,
 ) -> Json<Value> {
     let engine = engine.lock().unwrap();
-    let trades = engine.get_trades(params.symbol.as_deref(), params.limit);
+    let trades = engine.get_trades(params.symbol.as_deref(), params.account, params.limit);
     Json(json!(trades))
 }
 
@@ -50,6 +57,25 @@ async fn get_book(
     }
 }
 
+async fn get_accounts(State(engine): State<Arc<Mutex<MatchingEngine>>>) -> Result<Json<Value>, (StatusCode, String)> {
+    let engine = engine.lock().unwrap();
+    match engine.get_all_accounts() {
+        Ok(accounts) => Ok(Json(json!(accounts))),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))),
+    }
+}
+
+async fn get_account(
+    State(engine): State<Arc<Mutex<MatchingEngine>>>,
+    Query(params): Query<GetAccountQuery>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let engine = engine.lock().unwrap();
+    match engine.get_account_portfolio(params.id) {
+        Ok(portfolio) => Ok(Json(json!(portfolio))),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Database error: {}", e))),
+    }
+}
+
 async fn get_stats(State(engine): State<Arc<Mutex<MatchingEngine>>>) -> Json<Value> {
     let engine = engine.lock().unwrap();
     Json(json!(engine.get_stats()))
@@ -65,6 +91,8 @@ pub async fn run_server(engine: Arc<Mutex<MatchingEngine>>, port: u16) {
         .route("/health", get(health_check))
         .route("/trades", get(get_trades))
         .route("/book", get(get_book))
+        .route("/accounts", get(get_accounts))
+        .route("/account", get(get_account))
         .route("/stats", get(get_stats))
         .with_state(engine);
 

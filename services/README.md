@@ -219,9 +219,11 @@ curl -X POST http://127.0.0.1:3000/cancel \
 
 ---
 
-# Matching Engine Service
+# Matching Engine & Market Data Service
 
 The matching engine service consumes the order feed, maintains in-memory limit order books with price-time priority for all symbols, matches crossing buy and sell orders, executes trades, and handles cancellations.
+
+It persists all market data (trade history, book snapshots, per-account positions, and notional cash) to a SQLite relational database and provides HTTP query endpoints and CLI commands.
 
 ## Starting the Matching Engine
 
@@ -241,8 +243,9 @@ Custom options:
 - `--feed-url <URL>`: URL of the feed service (default `http://127.0.0.1:3000`).
 - `--matcher-port <PORT>`: HTTP API port for matching engine queries (default `3001`).
 - `--poll-interval-ms <MS>`: Polling interval in ms (default `100`).
+- `--db-path <PATH>`: Path to SQLite database file (default `market_data.db`, or use `:memory:`).
 
-## Interacting with the Matching Engine
+## Interacting with the Matching Engine & Market Data
 
 ### CLI Commands
 
@@ -252,10 +255,20 @@ Custom options:
   cargo run -- --book ETH-USDC
   ```
 
-- View executed trades:
+- View executed trades (all symbols or specific symbol):
   ```bash
   cargo run -- --trades
   cargo run -- --trades ETH-USDC
+  ```
+
+- View account portfolio (positions, notional cash balance, and fill count):
+  ```bash
+  cargo run -- --account 0
+  ```
+
+- View all active accounts with positions and cash:
+  ```bash
+  cargo run -- --accounts
   ```
 
 - View matching statistics:
@@ -265,7 +278,17 @@ Custom options:
 
 ### HTTP API (`http://127.0.0.1:3001`)
 
-- `GET /trades?symbol=ETH-USDC&limit=20`: List executed trades.
+- `GET /trades?symbol=ETH-USDC&account=0&limit=20`: List executed trades with optional symbol and account filter.
 - `GET /book?symbol=ETH-USDC`: View order book depth, spread, and open orders.
+- `GET /account?id=0`: View account's token positions, notional cash balance, and trade counts.
+- `GET /accounts`: List all active account portfolios.
 - `GET /stats`: View engine performance statistics (messages processed, trades executed, total volume).
 - `GET /health`: Health check endpoint.
+
+## SQLite Database Schema
+
+The market data service stores data across the following tables in SQLite:
+- `trades`: Record of all matched executions (`id`, `timestamp`, `symbol`, `buy_order_id`, `sell_order_id`, `maker_order_id`, `taker_order_id`, `buy_account`, `sell_account`, `price`, `quantity`, `value`).
+- `account_positions`: Net asset holdings per account per symbol (`account_id`, `symbol`, `position`).
+- `account_balances`: Notional cash balances in quote currency per account (`account_id`, `cash`).
+- `book_snapshots`: Serialized book state and top-of-book prices per symbol (`symbol`, `best_bid`, `best_ask`, `spread`, `snapshot_json`, `updated_at`).
